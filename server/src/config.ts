@@ -26,6 +26,8 @@ export interface Config {
   feeMultiplier: number;
   networkPassphrase: string;
   horizonUrl?: string;
+  maxXdrSize: number;
+  maxOperations: number;
   allowedOrigins: string[];
   rateLimitWindowMs: number;
   rateLimitMax: number;
@@ -133,6 +135,13 @@ export function loadConfig(): Config {
     };
   }
 
+  // Support comma-separated list of secrets
+  const secrets = rawSecrets
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (secrets.length === 0) {
+    throw new Error("FLUID_FEE_PAYER_SECRET must contain at least one secret");
   // Env fallback is only used when the secret env var is explicitly configured.
   // This is useful for local development; production should use Vault.
   if (feePayerSecretsEnv.length === 0) {
@@ -150,12 +159,25 @@ export function loadConfig(): Config {
     };
   });
 
+  const baseFee = parseInt(process.env.FLUID_BASE_FEE || "100", 10);
+  const feeMultiplier = parseFloat(process.env.FLUID_FEE_MULTIPLIER || "2.0");
+  const networkPassphrase =
+    process.env.STELLAR_NETWORK_PASSPHRASE ||
+    "Test SDF Network ; September 2015";
+  const horizonUrl = process.env.STELLAR_HORIZON_URL;
+
+  // Safety limits to prevent DoS attacks
+  const maxXdrSize = parseInt(process.env.FLUID_MAX_XDR_SIZE || "10240", 10); // Default: 10KB
+  const maxOperations = parseInt(process.env.FLUID_MAX_OPERATIONS || "100", 10); // Default: 100 operations
+
   return {
     feePayerAccounts,
     baseFee,
     feeMultiplier,
     networkPassphrase,
     horizonUrl,
+    maxXdrSize,
+    maxOperations,
     allowedOrigins,
     rateLimitWindowMs,
     rateLimitMax,

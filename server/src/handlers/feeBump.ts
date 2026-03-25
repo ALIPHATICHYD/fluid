@@ -63,6 +63,21 @@ export async function feeBumpHandler(
       );
     }
 
+    // Safety check: Reject transactions with too many operations (DoS protection)
+    const operationCount = innerTransaction.operations?.length || 0;
+    if (operationCount > config.maxOperations) {
+      console.warn(
+        `Transaction has too many operations: ${operationCount} (max: ${config.maxOperations})`,
+      );
+      return next(
+        new AppError(
+          `Transaction contains ${operationCount} operations, which exceeds the maximum allowed ${config.maxOperations}`,
+          400,
+          "TOO_MANY_OPERATIONS",
+        ),
+      );
+    }
+
     if (
       !innerTransaction.signatures ||
       innerTransaction.signatures.length === 0
@@ -86,6 +101,9 @@ export async function feeBumpHandler(
       );
     }
 
+    const baseFeeAmount = Math.floor(config.baseFee * config.feeMultiplier);
+
+    // Use extracted utility for correct fee calculation
     const apiKeyConfig = res.locals.apiKey as ApiKeyConfig | undefined;
     if (!apiKeyConfig) {
       res.status(500).json({
