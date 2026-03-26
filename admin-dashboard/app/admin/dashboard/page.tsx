@@ -8,6 +8,7 @@ import { getDashboardPageData } from "@/lib/dashboard-data";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { UsageLeaderboard } from "@/components/dashboard/UsageLeaderboard";
 import { getTenantLeaderboard } from "@/lib/transaction-history";
+import { SpendChart } from "@/components/dashboard/SpendChart";
 import { Coins, CheckCircle, Wallet, Zap, KeyRound } from "lucide-react";
 
 export default async function AdminDashboard() {
@@ -57,6 +58,7 @@ export default async function AdminDashboard() {
       </div>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* Stat Cards */}
         <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard
             title="Total XLM Sponsored"
@@ -84,6 +86,12 @@ export default async function AdminDashboard() {
           />
         </section>
 
+        {/* Spend Analytics Chart */}
+        <section className="mt-6">
+          <SpendChart />
+        </section>
+
+        {/* Tables */}
         <section className="mt-6 space-y-6">
           <div className="flex flex-wrap justify-end gap-3">
             <Link
