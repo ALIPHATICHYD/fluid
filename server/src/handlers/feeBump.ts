@@ -22,8 +22,8 @@ interface FeeBumpResponse {
 export async function feeBumpHandler(
   req: Request,
   res: Response,
-  next: NextFunction,
   config: Config,
+  next: NextFunction,
 ): Promise<void> {
   try {
     const parsedBody = FeeBumpSchema.safeParse(req.body);
@@ -128,7 +128,7 @@ export async function feeBumpHandler(
     }
 
     const tenant = syncTenantFromApiKey(apiKeyConfig);
-    const quotaCheck = checkTenantDailyQuota(tenant, feeAmount);
+    const quotaCheck = await checkTenantDailyQuota(tenant, feeAmount);
     if (!quotaCheck.allowed) {
       res.status(403).json({
         error: "Daily fee sponsorship quota exceeded",
@@ -154,7 +154,7 @@ export async function feeBumpHandler(
     );
 
     feeBumpTx.sign(feePayerAccount.keypair);
-    recordSponsoredTransaction(tenant.id, feeAmount);
+    await recordSponsoredTransaction(tenant.id, feeAmount);
 
     const feeBumpXdr = feeBumpTx.toXDR();
     console.log(
@@ -167,7 +167,7 @@ export async function feeBumpHandler(
 
       try {
         const submissionResult = await server.submitTransaction(feeBumpTx);
-        transactionStore.addTransaction(submissionResult.hash, "submitted");
+        transactionStore.addTransaction(submissionResult.hash, tenant.id, "submitted");
 
         const response: FeeBumpResponse = {
           xdr: feeBumpXdr,
