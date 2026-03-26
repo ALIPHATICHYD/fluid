@@ -8,6 +8,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
+    "demo:wait-confirmation": "ts-node src/demo/waitForConfirmation.ts",
+    "demo:wait-confirmation-only": "ts-node src/demo/waitForConfirmationOnly.ts",
     "test:compat": "ts-node test/stellarCompatibility.test.ts"
   },
   "keywords": [
