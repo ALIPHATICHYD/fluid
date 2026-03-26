@@ -1,9 +1,12 @@
 import { auth } from "@/auth";
 import Link from "next/link";
-import { SignersTable, TransactionsTable } from "@/components/dashboard/ResponsiveTables";
+import {
+  SignersTable,
+  TransactionsTable,
+} from "@/components/dashboard/ResponsiveTables";
 import { getDashboardPageData } from "@/lib/dashboard-data";
 import { StatCard } from "@/components/dashboard/StatCard";
-import { Coins, CheckCircle, Wallet, Zap } from "lucide-react";
+import { Coins, CheckCircle, Wallet, Zap, KeyRound } from "lucide-react";
 
 export default async function AdminDashboard() {
   const session = await auth();
@@ -18,15 +21,24 @@ export default async function AdminDashboard() {
               <p className="text-sm font-semibold uppercase tracking-[0.25em] text-sky-600">
                 Fluid Admin
               </p>
-              <h1 className="mt-2 text-3xl font-bold text-slate-900">Node Operations Dashboard</h1>
+              <h1 className="mt-2 text-3xl font-bold text-slate-900">
+                Node Operations Dashboard
+              </h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-600">
-                Transaction and signer visibility is optimized for mobile-first admin checks.
+                Transaction and signer visibility is optimized for mobile-first
+                admin checks.
               </p>
             </div>
             <div className="flex items-center gap-4">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                <div className="font-medium text-slate-900">{session?.user?.email}</div>
-                <div>{source === "live" ? "Live server data" : "Sample dashboard data"}</div>
+                <div className="font-medium text-slate-900">
+                  {session?.user?.email}
+                </div>
+                <div>
+                  {source === "live"
+                    ? "Live server data"
+                    : "Sample dashboard data"}
+                </div>
               </div>
               <form action="/api/auth/signout" method="POST">
                 <button
@@ -70,7 +82,14 @@ export default async function AdminDashboard() {
         </section>
 
         <section className="mt-6 space-y-6">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-3">
+            <Link
+              href="/admin/api-keys"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+            >
+              <KeyRound className="h-4 w-4" aria-hidden="true" />
+              Manage API keys
+            </Link>
             <Link
               href="/admin/transactions"
               className="inline-flex min-h-10 items-center justify-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white transition hover:bg-slate-700"

@@ -39,10 +39,13 @@
     "@prisma/adapter-better-sqlite3": "^7.5.0",
     "@prisma/client": "^7.5.0",
     "@stellar/stellar-sdk": "^11.3.0",
+    "better-sqlite3": "^12.8.0",
     "cors": "^2.8.6",
     "express": "^4.22.1",
     "express-rate-limit": "^8.3.1",
     "nodemailer": "^8.0.4",
+    "pino": "^10.3.1",
+    "stripe": "^21.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

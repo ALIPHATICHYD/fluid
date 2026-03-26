@@ -23,18 +23,27 @@ import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
 import { apiKeyRateLimit } from "./middleware/rateLimit";
 import { AlertService } from "./services/alertService";
 import { initializeBalanceMonitor } from "./workers/balanceMonitor";
-import { initializeLedgerMonitor } from "./workers/ledgerMonitor";
-import { transactionStore } from "./workers/transactionStore";
 import {
   getLedgerMonitor,
   initializeLedgerMonitor,
 } from "./workers/ledgerMonitor";
+import { stripeWebhookHandler } from "./handlers/stripeWebhook";
+import { transactionStore } from "./workers/transactionStore";
 
 const logger = createLogger({ component: "server" });
 
 dotenv.config();
 
 const app = express();
+
+// Stripe webhook needs raw body for signature verification
+app.post(
+  "/webhooks/stripe",
+  express.raw({ type: "application/json" }),
+  stripeWebhookHandler
+);
+
+// JSON parsing for all other routes
 app.use(express.json());
 
 const config = loadConfig();
@@ -186,12 +195,13 @@ app.post(
   },
 );
 
-// 404 - must come after all routes
 // Admin API keys management (minimal — secure these endpoints in production)
 app.get("/admin/api-keys", listApiKeysHandler);
 app.post("/admin/api-keys", upsertApiKeyHandler);
+app.patch("/admin/api-keys/:key/revoke", revokeApiKeyHandler);
 app.delete("/admin/api-keys/:key", revokeApiKeyHandler);
 
+// 404 - must come after all routes
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
 
@@ -229,6 +239,8 @@ if (
 } else {
   console.log(
     "Low balance alerting disabled - missing Horizon URL, threshold, or alert transport",
+  );
+}
 
 app.listen(PORT, () => {
   logger.info(

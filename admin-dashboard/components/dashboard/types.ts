@@ -30,6 +30,16 @@ export interface TransactionHistoryRow {
   tenant: string;
 }
 
+export interface ApiKey {
+  id: string;
+  key: string;
+  prefix: string;
+  tenantId: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type TransactionHistorySort =
   | "time_desc"
   | "time_asc"
