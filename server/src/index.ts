@@ -1,24 +1,34 @@
 import { createLogger, serializeError } from "./utils/logger";
 import express, { NextFunction, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
+import redisClient from "./utils/redis";
+import { RedisRateLimitStore } from "./utils/redisRateLimitStore";
+import cors from "cors";
+import dotenv from "dotenv";
+
+import { loadConfig } from "./config";
+import { AppError } from "./errors/AppError";
+import { feeBumpHandler } from "./handlers/feeBump";
 import {
   getHorizonFailoverClient,
   initializeHorizonFailoverClient,
 } from "./horizon/failoverClient";
+import { apiKeyMiddleware } from "./middleware/apiKeys";
+import {
+  listApiKeysHandler,
+  upsertApiKeyHandler,
+  revokeApiKeyHandler,
+} from "./handlers/adminApiKeys";
+import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
+import { apiKeyRateLimit } from "./middleware/rateLimit";
+import { AlertService } from "./services/alertService";
+import { initializeBalanceMonitor } from "./workers/balanceMonitor";
+import { initializeLedgerMonitor } from "./workers/ledgerMonitor";
+import { transactionStore } from "./workers/transactionStore";
 import {
   getLedgerMonitor,
   initializeLedgerMonitor,
 } from "./workers/ledgerMonitor";
-import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
-
-import { AppError } from "./errors/AppError";
-import { apiKeyMiddleware } from "./middleware/apiKeys";
-import { apiKeyRateLimit } from "./middleware/rateLimit";
-import cors from "cors";
-import dotenv from "dotenv";
-import { feeBumpHandler } from "./handlers/feeBump";
-import { loadConfig } from "./config";
-import rateLimit from "express-rate-limit";
-import { transactionStore } from "./workers/transactionStore";
 
 const logger = createLogger({ component: "server" });
 
@@ -28,8 +38,25 @@ const app = express();
 app.use(express.json());
 
 const config = loadConfig();
-if (config.horizonUrls.length > 0) {
-  initializeHorizonFailoverClient(config);
+const alertService = new AlertService(config.alerting);
+
+// Use Redis-backed store for global IP rate limiting. Falls back to memory store if Redis unavailable.
+const windowSeconds = Math.max(1, Math.ceil(config.rateLimitWindowMs / 1000));
+let limiterStore: any = undefined;
+try {
+  // Prefer a maintained adapter if available: rate-limit-redis
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const RateLimitRedis = require("rate-limit-redis");
+  const RedisStore = RateLimitRedis.default || RateLimitRedis;
+  // Many adapters accept `client` for an ioredis instance and `expiry` or `windowMs`.
+  limiterStore = new RedisStore({ client: redisClient, expiry: windowSeconds });
+} catch (err) {
+  // Fallback to the lightweight custom store we added earlier
+  try {
+    limiterStore = new RedisRateLimitStore(redisClient, windowSeconds);
+  } catch (innerErr) {
+    console.error("Failed to initialize Redis rate-limit store:", innerErr);
+  }
 }
 
 const limiter = rateLimit({
@@ -41,6 +68,7 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  store: limiterStore,
 });
 
 const corsOptions = {
@@ -97,6 +125,17 @@ app.get("/health", (req: Request, res: Response) => {
         consecutiveFailures: 0,
       })),
     total: accounts.length,
+    low_balance_alerting: {
+      enabled:
+        config.alerting.lowBalanceThresholdXlm !== undefined &&
+        alertService.isEnabled() &&
+        Boolean(config.horizonUrl),
+      threshold_xlm: config.alerting.lowBalanceThresholdXlm ?? null,
+      check_interval_ms: config.alerting.checkIntervalMs,
+      cooldown_ms: config.alerting.cooldownMs,
+      slack_configured: Boolean(config.alerting.slackWebhookUrl),
+      email_configured: Boolean(config.alerting.email),
+    },
   });
 });
 
@@ -107,8 +146,8 @@ app.post(
   apiKeyRateLimit,
   limiter,
   (req: Request, res: Response, next: NextFunction) => {
-    feeBumpHandler(req, res, config, next);
-  }
+    feeBumpHandler(req, res, next, config);
+  },
 );
 
 app.post("/test/add-transaction", (req: Request, res: Response) => {
@@ -128,6 +167,31 @@ app.get("/test/transactions", (req: Request, res: Response) => {
   res.json({ transactions });
 });
 
+app.post(
+  "/test/alerts/low-balance",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!alertService.isEnabled()) {
+        return res.status(400).json({
+          error:
+            "No alert transport configured. Set Slack webhook or SMTP env vars first.",
+        });
+      }
+
+      await alertService.sendTestAlert(config);
+      res.json({ message: "Test low-balance alert sent" });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// 404 - must come after all routes
+// Admin API keys management (minimal — secure these endpoints in production)
+app.get("/admin/api-keys", listApiKeysHandler);
+app.post("/admin/api-keys", upsertApiKeyHandler);
+app.delete("/admin/api-keys/:key", revokeApiKeyHandler);
+
 app.use(notFoundHandler);
 app.use(globalErrorHandler);
 
@@ -140,24 +204,45 @@ if (config.horizonUrls.length > 0) {
     ledgerMonitor.start();
     logger.info("Ledger monitor worker started");
   } catch (error) {
-    logger.error({ ...serializeError(error) }, "Failed to start ledger monitor");
+    logger.error(
+      { ...serializeError(error) },
+      "Failed to start ledger monitor",
+    );
   }
 } else {
   logger.info("No Horizon URLs configured; ledger monitor disabled");
 }
 
-// ✅ Start server
+let balanceMonitor: any = null;
+if (
+  config.horizonUrl &&
+  config.alerting.lowBalanceThresholdXlm !== undefined &&
+  alertService.isEnabled()
+) {
+  try {
+    balanceMonitor = initializeBalanceMonitor(config, alertService);
+    balanceMonitor.start();
+    console.log("Balance monitor worker started");
+  } catch (error) {
+    console.error("Failed to start balance monitor:", error);
+  }
+} else {
+  console.log(
+    "Low balance alerting disabled - missing Horizon URL, threshold, or alert transport",
+
 app.listen(PORT, () => {
   logger.info(
     {
       fee_payers_loaded: config.feePayerAccounts.length,
-      fee_payer_public_keys: config.feePayerAccounts.map((account) => account.publicKey),
+      fee_payer_public_keys: config.feePayerAccounts.map(
+        (account) => account.publicKey,
+      ),
       horizon_node_count: config.horizonUrls.length,
       horizon_nodes: config.horizonUrls,
       horizon_selection_strategy: config.horizonSelectionStrategy,
       port: PORT,
       url: `http://0.0.0.0:${PORT}`,
     },
-    "Fluid server started"
+    "Fluid server started",
   );
 });
