@@ -126,8 +126,12 @@ mod tests {
     fn load_config_errors_when_fee_payer_secret_missing() {
         // Ensure the required secret isn't set for this test process.
         std::env::remove_var("FLUID_FEE_PAYER_SECRET");
-        let err = load_config().expect_err("expected missing secret to error");
-        assert_eq!(err.code, "INTERNAL_ERROR");
-        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        match load_config() {
+            Ok(_) => panic!("expected missing secret to error"),
+            Err(err) => {
+                assert_eq!(err.code, "INTERNAL_ERROR");
+                assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
     }
 }
