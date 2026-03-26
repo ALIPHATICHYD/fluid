@@ -1,19 +1,36 @@
-import cors from "cors";
-import dotenv from "dotenv";
+import { createLogger, serializeError } from "./utils/logger";
 import express, { NextFunction, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
+import redisClient from "./utils/redis";
+import { RedisRateLimitStore } from "./utils/redisRateLimitStore";
+import cors from "cors";
+import dotenv from "dotenv";
 
 import { loadConfig } from "./config";
-import { feeBumpHandler } from "./handlers/feeBump";
-import { healthHandler } from "./handlers/health";
-
-import { apiKeyMiddleware } from "./middleware/apiKeys";
-import { apiKeyRateLimit } from "./middleware/rateLimit";
-import { notFoundHandler, globalErrorHandler } from "./middleware/errorHandler";
 import { AppError } from "./errors/AppError";
-
+import { feeBumpHandler } from "./handlers/feeBump";
+import {
+  getHorizonFailoverClient,
+  initializeHorizonFailoverClient,
+} from "./horizon/failoverClient";
+import { apiKeyMiddleware } from "./middleware/apiKeys";
+import {
+  listApiKeysHandler,
+  upsertApiKeyHandler,
+  revokeApiKeyHandler,
+} from "./handlers/adminApiKeys";
+import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
+import { apiKeyRateLimit } from "./middleware/rateLimit";
+import { AlertService } from "./services/alertService";
+import { initializeBalanceMonitor } from "./workers/balanceMonitor";
 import { initializeLedgerMonitor } from "./workers/ledgerMonitor";
 import { transactionStore } from "./workers/transactionStore";
+import {
+  getLedgerMonitor,
+  initializeLedgerMonitor,
+} from "./workers/ledgerMonitor";
+
+const logger = createLogger({ component: "server" });
 
 dotenv.config();
 
@@ -21,8 +38,27 @@ const app = express();
 app.use(express.json());
 
 const config = loadConfig();
+const alertService = new AlertService(config.alerting);
 
-// Rate limiter
+// Use Redis-backed store for global IP rate limiting. Falls back to memory store if Redis unavailable.
+const windowSeconds = Math.max(1, Math.ceil(config.rateLimitWindowMs / 1000));
+let limiterStore: any = undefined;
+try {
+  // Prefer a maintained adapter if available: rate-limit-redis
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const RateLimitRedis = require("rate-limit-redis");
+  const RedisStore = RateLimitRedis.default || RateLimitRedis;
+  // Many adapters accept `client` for an ioredis instance and `expiry` or `windowMs`.
+  limiterStore = new RedisStore({ client: redisClient, expiry: windowSeconds });
+} catch (err) {
+  // Fallback to the lightweight custom store we added earlier
+  try {
+    limiterStore = new RedisRateLimitStore(redisClient, windowSeconds);
+  } catch (innerErr) {
+    console.error("Failed to initialize Redis rate-limit store:", innerErr);
+  }
+}
+
 const limiter = rateLimit({
   windowMs: config.rateLimitWindowMs,
   max: config.rateLimitMax,
@@ -32,27 +68,27 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  store: limiterStore,
 });
 
-// CORS configuration
 const corsOptions = {
   origin: (
     origin: string | undefined,
     callback: (err: Error | null, allow?: boolean) => void,
   ) => {
-    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) {
       callback(null, false);
       return;
     }
 
-    // Check if the origin is in the allowed list
-    if (config.allowedOrigins.includes("*") || config.allowedOrigins.includes(origin)) {
+    if (
+      config.allowedOrigins.length === 0 ||
+      config.allowedOrigins.includes(origin)
+    ) {
       callback(null, true);
       return;
     }
 
-    // Reject the request - pass error to trigger error handler
     callback(new Error("Origin not allowed by CORS"), false);
   },
   credentials: true,
@@ -60,7 +96,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Handle CORS errors properly
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   if (err.message === "Origin not allowed by CORS") {
     return next(new AppError("CORS not allowed", 403, "AUTH_FAILED"));
@@ -68,9 +103,40 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   next(err);
 });
 
-// Health check (delegated)
-app.get("/health", (req: Request, res: Response, next: NextFunction) => {
-  healthHandler(req, res, next, config);
+app.get("/health", (req: Request, res: Response) => {
+  const accounts = config.signerPool.getSnapshot().map((account) => ({
+    publicKey: account.publicKey,
+    status: account.active ? "active" : "inactive",
+    in_flight: account.inFlight,
+    total_uses: account.totalUses,
+    sequence_number: account.sequenceNumber,
+    balance: account.balance,
+  }));
+
+  res.json({
+    status: "ok",
+    fee_payers: accounts,
+    horizon_nodes:
+      getHorizonFailoverClient()?.getNodeStatuses() ??
+      getLedgerMonitor()?.getNodeStatuses() ??
+      config.horizonUrls.map((url) => ({
+        url,
+        state: "Active",
+        consecutiveFailures: 0,
+      })),
+    total: accounts.length,
+    low_balance_alerting: {
+      enabled:
+        config.alerting.lowBalanceThresholdXlm !== undefined &&
+        alertService.isEnabled() &&
+        Boolean(config.horizonUrl),
+      threshold_xlm: config.alerting.lowBalanceThresholdXlm ?? null,
+      check_interval_ms: config.alerting.checkIntervalMs,
+      cooldown_ms: config.alerting.cooldownMs,
+      slack_configured: Boolean(config.alerting.slackWebhookUrl),
+      email_configured: Boolean(config.alerting.email),
+    },
+  });
 });
 
 // Fee bump endpoint
@@ -84,56 +150,99 @@ app.post(
   },
 );
 
-// Add transaction manually
 app.post("/test/add-transaction", (req: Request, res: Response) => {
-  const { hash, status = "pending" } = req.body;
+  const { hash, status = "pending", tenantId = "test-tenant" } = req.body;
 
   if (!hash) {
-    return res.status(400).json({ error: "Transaction hash is required" });
+    res.status(400).json({ error: "Transaction hash is required" });
+    return;
   }
 
-  transactionStore.addTransaction(hash, status);
-
-  res.json({
-    message: `Transaction ${hash} added with status ${status}`,
-  });
+  transactionStore.addTransaction(hash, tenantId, status);
+  res.json({ message: `Transaction ${hash} added with status ${status}` });
 });
 
-// View all transactions
 app.get("/test/transactions", (req: Request, res: Response) => {
   const transactions = transactionStore.getAllTransactions();
   res.json({ transactions });
 });
 
-// 404 handler
-app.use(notFoundHandler);
+app.post(
+  "/test/alerts/low-balance",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!alertService.isEnabled()) {
+        return res.status(400).json({
+          error:
+            "No alert transport configured. Set Slack webhook or SMTP env vars first.",
+        });
+      }
 
-// Global error handler
+      await alertService.sendTestAlert(config);
+      res.json({ message: "Test low-balance alert sent" });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// 404 - must come after all routes
+// Admin API keys management (minimal — secure these endpoints in production)
+app.get("/admin/api-keys", listApiKeysHandler);
+app.post("/admin/api-keys", upsertApiKeyHandler);
+app.delete("/admin/api-keys/:key", revokeApiKeyHandler);
+
+app.use(notFoundHandler);
 app.use(globalErrorHandler);
 
 const PORT = process.env.PORT || 3000;
 
-// Initialize ledger monitor
-let ledgerMonitor: any = null;
-
-if (config.horizonUrl) {
+let ledgerMonitor: ReturnType<typeof initializeLedgerMonitor> | null = null;
+if (config.horizonUrls.length > 0) {
   try {
     ledgerMonitor = initializeLedgerMonitor(config);
     ledgerMonitor.start();
-    console.log("Ledger monitor worker started");
+    logger.info("Ledger monitor worker started");
   } catch (error) {
-    console.error("Failed to start ledger monitor:", error);
+    logger.error(
+      { ...serializeError(error) },
+      "Failed to start ledger monitor",
+    );
   }
 } else {
-  console.log("No Horizon URL configured - ledger monitor disabled");
+  logger.info("No Horizon URLs configured; ledger monitor disabled");
 }
 
-// ✅ Start server
-app.listen(PORT, () => {
-  console.log(`Fluid server running on http://0.0.0.0:${PORT}`);
-  console.log(`Fee payers loaded: ${config.feePayerAccounts.length}`);
+let balanceMonitor: any = null;
+if (
+  config.horizonUrl &&
+  config.alerting.lowBalanceThresholdXlm !== undefined &&
+  alertService.isEnabled()
+) {
+  try {
+    balanceMonitor = initializeBalanceMonitor(config, alertService);
+    balanceMonitor.start();
+    console.log("Balance monitor worker started");
+  } catch (error) {
+    console.error("Failed to start balance monitor:", error);
+  }
+} else {
+  console.log(
+    "Low balance alerting disabled - missing Horizon URL, threshold, or alert transport",
 
-  config.feePayerAccounts.forEach((a, i) => {
-    console.log(`  [${i + 1}] ${a.publicKey}`);
-  });
+app.listen(PORT, () => {
+  logger.info(
+    {
+      fee_payers_loaded: config.feePayerAccounts.length,
+      fee_payer_public_keys: config.feePayerAccounts.map(
+        (account) => account.publicKey,
+      ),
+      horizon_node_count: config.horizonUrls.length,
+      horizon_nodes: config.horizonUrls,
+      horizon_selection_strategy: config.horizonSelectionStrategy,
+      port: PORT,
+      url: `http://0.0.0.0:${PORT}`,
+    },
+    "Fluid server started",
+  );
 });
