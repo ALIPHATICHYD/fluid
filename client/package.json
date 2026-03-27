@@ -5,23 +5,35 @@
   "main": "dist/index.js",
   "browser": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*",
+    "src/**/*",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./worker": {
+      "import": "./dist/workers/signingWorker.js",
+      "types": "./dist/workers/signingWorker.d.ts"
+    }
+  },
   "scripts": {
-    "build": "tsc && typedoc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "docs": "typedoc",
-    "test": "vitest run"
     "build": "tsc",
     "build:worker": "tsc src/workers/signingWorker.ts --outDir dist --target ES2020 --module ESNext --lib ES2020,WebWorker,DOM",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "demo:sac-transfer-xdr": "ts-node src/examples/sacTransferXdr.ts",
-    "analyze": "tsup src/index.ts --format esm --metafile && echo 'Analyze metafile with a tool or visualizer'"
+    "docs": "typedoc",
+    "test": "vitest run",
     "demo": "python -m http.server 8080",
-    "test:performance": "open demo.html"
+    "demo:sac-transfer-xdr": "ts-node src/examples/sacTransferXdr.ts",
     "demo:wait-confirmation": "ts-node src/demo/waitForConfirmation.ts",
     "demo:wait-confirmation-only": "ts-node src/demo/waitForConfirmationOnly.ts",
-    "test:compat": "ts-node test/stellarCompatibility.test.ts"
+    "test:compat": "ts-node test/stellarCompatibility.test.ts",
+    "analyze": "tsup src/index.ts --format esm --metafile"
   },
   "keywords": [
     "stellar",
@@ -42,31 +54,15 @@
     "react": ">=18"
   },
   "devDependencies": {
+    "@rolldown/binding-win32-x64-msvc": "^1.0.0-rc.12",
     "@types/node": "^20.10.0",
-    "rollup-plugin-visualizer": "^7.0.1",
-    "msw": "^2.12.14",
     "@types/react": "^18.3.18",
+    "msw": "^2.12.14",
+    "rollup-plugin-visualizer": "^7.0.1",
     "stellar-sdk-v10": "npm:stellar-sdk@10.4.1",
     "stellar-sdk-v11": "npm:@stellar/stellar-sdk@11.3.0",
     "ts-node": "^10.9.2",
     "tsup": "^8.5.1",
-    "typescript": "^5.3.3"
-  },
-  "files": [
-    "dist/**/*",
-    "src/**/*",
-    "README.md"
-  ],
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./worker": {
-      "import": "./dist/workers/signingWorker.js",
-      "types": "./dist/workers/signingWorker.d.ts"
-    }
     "typedoc": "^0.28.18",
     "typescript": "^5.3.3",
     "vitest": "^4.1.2"

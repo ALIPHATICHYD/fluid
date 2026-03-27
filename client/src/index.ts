@@ -15,7 +15,8 @@ import {
 dotenv.config();
 
 export interface FluidClientConfig {
-  serverUrl: string;
+  serverUrl?: string;
+  serverUrls?: string[];
   networkPassphrase: string;
   horizonUrl?: string;
   sorobanRpcUrl?: string;
@@ -53,8 +54,13 @@ export type WaitForConfirmationOptions = {
   onProgress?: (progress: WaitForConfirmationProgress) => void;
 };
 
+type RequestError = Error & {
+  status?: number;
+  serverUrl?: string;
+};
+
 export class FluidClient {
-  private serverUrl: string;
+  private serverUrls: string[];
   private networkPassphrase: string;
   private horizonServer?: any;
   private sorobanServer?: SorobanRpc.Server;
@@ -67,9 +73,16 @@ export class FluidClient {
   private requestIdCounter: number = 0;
   private horizonUrl?: string;
   private stellarSdk: unknown;
+  private readonly failedNodeCooldownMs = 30_000;
+  private readonly baseRetryDelayMs = 250;
+  private readonly maxRetryDelayMs = 2_000;
+  private readonly nodeFailureState = new Map<
+    string,
+    { failures: number; failedUntil: number }
+  >();
 
   constructor(config: FluidClientConfig) {
-    this.serverUrl = config.serverUrl;
+    this.serverUrls = this.normalizeServerUrls(config);
     this.networkPassphrase = config.networkPassphrase;
     this.useWorker = config.useWorker || false;
 
@@ -85,6 +98,160 @@ export class FluidClient {
     if (config.sorobanRpcUrl) {
       this.sorobanServer = new SorobanRpc.Server(config.sorobanRpcUrl);
     }
+  }
+
+  private normalizeServerUrls(config: FluidClientConfig): string[] {
+    const rawUrls = config.serverUrls?.length
+      ? config.serverUrls
+      : config.serverUrl
+        ? [config.serverUrl]
+        : [];
+
+    const normalized = rawUrls
+      .map((url) => url.trim().replace(/\/+$/, ""))
+      .filter(Boolean);
+
+    if (normalized.length === 0) {
+      throw new Error(
+        "FluidClient requires at least one server URL via serverUrl or serverUrls",
+      );
+    }
+
+    return [...new Set(normalized)];
+  }
+
+  private getOrderedServerUrls(): string[] {
+    const now = Date.now();
+
+    return [...this.serverUrls]
+      .map((url, index) => {
+        const state = this.nodeFailureState.get(url);
+        const isCoolingDown = state ? state.failedUntil > now : false;
+
+        return {
+          url,
+          index,
+          score: isCoolingDown ? 1_000 + state!.failedUntil - now : 0,
+        };
+      })
+      .sort((left, right) => left.score - right.score || left.index - right.index)
+      .map((entry) => entry.url);
+  }
+
+  private markServerFailure(serverUrl: string): void {
+    const previous = this.nodeFailureState.get(serverUrl);
+    const failures = (previous?.failures ?? 0) + 1;
+    const cooldownMultiplier = Math.min(2 ** (failures - 1), 4);
+
+    this.nodeFailureState.set(serverUrl, {
+      failures,
+      failedUntil: Date.now() + this.failedNodeCooldownMs * cooldownMultiplier,
+    });
+  }
+
+  private markServerSuccess(serverUrl: string): void {
+    this.nodeFailureState.delete(serverUrl);
+  }
+
+  private getRetryDelayMs(attemptIndex: number): number {
+    return Math.min(
+      this.baseRetryDelayMs * 2 ** attemptIndex,
+      this.maxRetryDelayMs,
+    );
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private formatServerErrorMessage(
+    response: Response,
+    errorText: string,
+  ): string {
+    try {
+      const parsed = JSON.parse(errorText) as Record<string, unknown>;
+      return `Fluid server error: ${JSON.stringify(parsed)}`;
+    } catch {
+      return `Fluid server error: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`;
+    }
+  }
+
+  private async performJsonRequest<T>(
+    serverUrl: string,
+    path: string,
+    body: unknown,
+  ): Promise<T> {
+    let response: Response;
+
+    try {
+      response = await fetch(`${serverUrl}${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      const requestError = new Error(
+        `Fluid server request failed: ${error instanceof Error ? error.message : String(error)}`,
+      ) as RequestError;
+      requestError.serverUrl = serverUrl;
+      throw requestError;
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      const requestError = new Error(
+        this.formatServerErrorMessage(response, errorText),
+      ) as RequestError;
+      requestError.status = response.status;
+      requestError.serverUrl = serverUrl;
+      throw requestError;
+    }
+
+    return (await response.json()) as T;
+  }
+
+  private async requestWithFallback<T>(
+    path: string,
+    body: unknown,
+  ): Promise<T> {
+    const orderedServerUrls = this.getOrderedServerUrls();
+    let lastError: RequestError | undefined;
+
+    for (let attemptIndex = 0; attemptIndex < orderedServerUrls.length; attemptIndex += 1) {
+      const serverUrl = orderedServerUrls[attemptIndex];
+
+      try {
+        const result = await this.performJsonRequest<T>(serverUrl, path, body);
+        this.markServerSuccess(serverUrl);
+        return result;
+      } catch (error) {
+        const requestError =
+          error instanceof Error ? (error as RequestError) : new Error(String(error));
+
+        if (requestError.status === 400) {
+          throw requestError;
+        }
+
+        lastError = requestError;
+        this.markServerFailure(serverUrl);
+
+        if (attemptIndex < orderedServerUrls.length - 1) {
+          const retryDelayMs = this.getRetryDelayMs(attemptIndex);
+          const nextServerUrl = orderedServerUrls[attemptIndex + 1];
+          console.warn(
+            `[FluidClient] Request failed on ${serverUrl} (${requestError.message}). Retrying ${path} on ${nextServerUrl} in ${retryDelayMs}ms.`,
+          );
+          await this.sleep(retryDelayMs);
+        }
+      }
+    }
+
+    throw (
+      lastError ??
+      new Error(`Fluid server error: no available servers for request to ${path}`)
+    );
   }
 
   private initializeWorker(): void {
@@ -196,23 +363,10 @@ export class FluidClient {
     signedTransactionXdr: string,
     submit: boolean = false,
   ): Promise<FeeBumpResponse> {
-    const response = await fetch(`${this.serverUrl}/fee-bump`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        xdr: signedTransactionXdr,
-        submit: submit,
-      }),
+    const result = await this.requestWithFallback<FeeBumpResponse>("/fee-bump", {
+      xdr: signedTransactionXdr,
+      submit,
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(`Fluid server error: ${JSON.stringify(error)}`);
-    }
-
-    const result = (await response.json()) as FeeBumpResponse;
     return {
       xdr: result.xdr,
       status: result.status,
