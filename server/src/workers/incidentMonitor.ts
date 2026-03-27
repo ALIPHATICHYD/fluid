@@ -1,4 +1,4 @@
-import StellarSdk from "@stellar/stellar-sdk";
+import * as StellarSdk from "@stellar/stellar-sdk";
 import { Config } from "../config";
 import redis from "../utils/redis";
 import { createLogger, serializeError } from "../utils/logger";
@@ -6,6 +6,7 @@ import {
   PagerDutyNotifier,
   type PagerDutyEventType,
 } from "../services/pagerDutyNotifier";
+import type { FcmNotifierLike } from "../services/fcmNotifier";
 
 const logger = createLogger({ component: "incident_monitor" });
 
@@ -83,6 +84,7 @@ class IncidentStateStore {
 export interface IncidentMonitorOptions {
   checkIntervalMs?: number;
   horizonCheck?: () => Promise<boolean>;
+  fcmNotifier?: FcmNotifierLike;
 }
 
 export class IncidentMonitor {
@@ -90,6 +92,7 @@ export class IncidentMonitor {
   private readonly horizonServer: StellarSdk.Horizon.Server | null;
   private readonly state = new IncidentStateStore();
   private restartPending = false;
+  private readonly fcmNotifier?: FcmNotifierLike;
 
   constructor(
     private readonly config: Config,
@@ -99,6 +102,7 @@ export class IncidentMonitor {
     this.horizonServer = config.horizonUrl
       ? new StellarSdk.Horizon.Server(config.horizonUrl)
       : null;
+    this.fcmNotifier = options.fcmNotifier;
   }
 
   start(): void {
@@ -225,7 +229,7 @@ export class IncidentMonitor {
 
     try {
       await withTimeout(
-        this.horizonServer.serverInfo(),
+        this.horizonServer.feeStats(),
         HORIZON_TIMEOUT_MS,
       );
       return true;
@@ -255,6 +259,16 @@ export class IncidentMonitor {
       customDetails?: Record<string, unknown>;
     },
   ): Promise<void> {
+    // Send FCM push for critical server events regardless of PagerDuty config
+    if (this.fcmNotifier?.isConfigured()) {
+      void this.fcmNotifier.notifyServerDown({
+        reason: details.summary,
+        detail: details.customDetails
+          ? JSON.stringify(details.customDetails)
+          : undefined,
+      });
+    }
+
     if (!this.pagerDuty.isConfigured()) {
       return;
     }
@@ -308,8 +322,9 @@ export function initializeIncidentMonitor(
   config: Config,
   pagerDuty: PagerDutyNotifier,
   options: IncidentMonitorOptions = {},
+  fcmNotifier?: FcmNotifierLike,
 ): IncidentMonitor {
-  return new IncidentMonitor(config, pagerDuty, options);
+  return new IncidentMonitor(config, pagerDuty, { ...options, fcmNotifier });
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

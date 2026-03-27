@@ -1,5 +1,6 @@
 import type { AlertEmailConfig, AlertingConfig, Config } from "../config";
 import { SlackNotifier, type SlackNotifierLike } from "./slackNotifier";
+import type { FcmNotifierLike } from "./fcmNotifier";
 
 type NodeMailerModule = {
   createTransport: (config: {
@@ -49,6 +50,7 @@ export interface AlertServiceOptions {
   now?: () => number;
   dashboardUrl?: string;
   loadNodeMailer?: () => NodeMailerModule;
+  fcmNotifier?: FcmNotifierLike;
 }
 
 interface AlertState {
@@ -205,6 +207,7 @@ export class AlertService {
   private readonly loadNodeMailerModule: () => NodeMailerModule;
   private readonly now: () => number;
   private readonly state = new Map<string, AlertState>();
+  private readonly fcmNotifier?: FcmNotifierLike;
 
   constructor(
     private readonly config: AlertingConfig,
@@ -221,10 +224,15 @@ export class AlertService {
     this.loadNodeMailerModule =
       options.loadNodeMailer ?? this.loadNodeMailer.bind(this);
     this.now = options.now ?? (() => Date.now());
+    this.fcmNotifier = options.fcmNotifier;
   }
 
   isEnabled(): boolean {
-    return Boolean(this.emailTransport) || this.slackNotifier.isConfigured();
+    return (
+      Boolean(this.emailTransport) ||
+      this.slackNotifier.isConfigured() ||
+      Boolean(this.fcmNotifier?.isConfigured())
+    );
   }
 
   async sendLowBalanceAlert(payload: LowBalanceAlertPayload): Promise<boolean> {
@@ -297,6 +305,18 @@ export class AlertService {
 
     if (this.emailTransport) {
       tasks.push(this.sendEmailAlert(payload, this.emailTransport));
+    }
+
+    if (this.fcmNotifier?.isConfigured()) {
+      tasks.push(
+        this.fcmNotifier
+          .notifyLowBalance({
+            accountPublicKey: payload.accountPublicKey,
+            balanceXlm: payload.balanceXlm,
+            thresholdXlm: payload.thresholdXlm,
+          })
+          .then(() => undefined),
+      );
     }
 
     if (tasks.length === 0) {

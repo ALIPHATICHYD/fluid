@@ -10,6 +10,8 @@ import { UsageLeaderboard } from "@/components/dashboard/UsageLeaderboard";
 import { BillingTopUp } from "@/components/dashboard/BillingTopUp";
 import { getTenantLeaderboard } from "@/lib/transaction-history";
 import { SpendChart } from "@/components/dashboard/SpendChart";
+import { ConnectDeviceDialog } from "@/components/dashboard/ConnectDeviceDialog";
+import { fluidServerUrl, fluidAdminToken } from "@/lib/server-env";
 import { Coins, CheckCircle, Wallet, Zap, KeyRound } from "lucide-react";
 
 export default async function AdminDashboard() {
@@ -45,6 +47,10 @@ export default async function AdminDashboard() {
                     : "Sample dashboard data"}
                 </div>
               </div>
+              <ConnectDeviceDialog
+                serverUrl={fluidServerUrl}
+                adminToken={fluidAdminToken}
+              />
               <form action="/api/auth/signout" method="POST">
                 <button
                   type="submit"

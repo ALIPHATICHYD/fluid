@@ -47,6 +47,12 @@ import {
   SlackNotifier,
 } from "./services/slackNotifier";
 import { PagerDutyNotifier } from "./services/pagerDutyNotifier";
+import { initializeFcmNotifier } from "./services/fcmNotifier";
+import {
+  listDeviceTokensHandler,
+  registerDeviceTokenHandler,
+  deleteDeviceTokenHandler,
+} from "./handlers/adminDeviceTokens";
 import { createLogger, serializeError } from "./utils/logger";
 import redisClient from "./utils/redis";
 import { RedisRateLimitStore } from "./utils/redisRateLimitStore";
@@ -66,9 +72,15 @@ const app = express();
 app.use(express.json());
 
 const config = loadConfig();
-const alertService = new AlertService(config.alerting);
 const slackNotifier = new SlackNotifier(loadSlackNotifierOptionsFromEnv());
 const pagerDutyNotifier = new PagerDutyNotifier();
+const fcmNotifier = initializeFcmNotifier();
+if (fcmNotifier.isConfigured()) {
+  logger.info("FCM push notifications enabled");
+} else {
+  logger.info("FCM push notifications disabled - FCM_PROJECT_ID/FCM_CLIENT_EMAIL/FCM_PRIVATE_KEY not set");
+}
+const alertService = new AlertService(config.alerting, slackNotifier, { fcmNotifier });
 
 // Use Redis-backed store for global IP rate limiting. Falls back to memory store if Redis unavailable.
 const windowSeconds = Math.max(1, Math.ceil(config.rateLimitWindowMs / 1000));
@@ -225,6 +237,9 @@ app.patch("/admin/webhooks/:tenantId", updateWebhookSettingsHandler);
 app.get("/admin/signers", listSignersHandler(config));
 app.post("/admin/signers", addSignerHandler(config));
 app.delete("/admin/signers/:publicKey", removeSignerHandler(config));
+app.get("/admin/device-tokens", listDeviceTokensHandler);
+app.post("/admin/device-tokens", registerDeviceTokenHandler);
+app.delete("/admin/device-tokens/:id", deleteDeviceTokenHandler);
 
 app.post(
   "/stripe/webhook",
@@ -301,9 +316,9 @@ if (
   );
 }
 
-if (pagerDutyNotifier.isConfigured()) {
+if (pagerDutyNotifier.isConfigured() || fcmNotifier.isConfigured()) {
   try {
-    incidentMonitor = initializeIncidentMonitor(config, pagerDutyNotifier);
+    incidentMonitor = initializeIncidentMonitor(config, pagerDutyNotifier, {}, fcmNotifier);
     incidentMonitor.start();
     logger.info("Incident monitor worker started");
   } catch (error) {
