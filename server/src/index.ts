@@ -2,6 +2,8 @@ import "dotenv/config";
 
 import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpec } from "./swagger";
 import rateLimit from "express-rate-limit";
 import { loadConfig } from "./config";
 import { AppError } from "./errors/AppError";
@@ -19,6 +21,11 @@ import {
   listSignersHandler,
   removeSignerHandler,
 } from "./handlers/adminSigners";
+import {
+  deleteDlqHandler,
+  listDlqHandler,
+  replayDlqHandler,
+} from "./handlers/adminDlq";
 import { badgeHandler } from "./handlers/badge";
 import { feeBumpBatchHandler, feeBumpHandler } from "./handlers/feeBump";
 import { createCheckoutSessionHandler, stripeWebhookHandler } from "./handlers/stripe";
@@ -41,6 +48,7 @@ import {
   initializeLedgerMonitor,
 } from "./workers/ledgerMonitor";
 import { initializeIncidentMonitor } from "./workers/incidentMonitor";
+import { initializeTreasuryRefill } from "./workers/treasuryRefill";
 import { transactionStore } from "./workers/transactionStore";
 import { healthHandler } from "./handlers/health";
 import {
@@ -55,6 +63,14 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
+
+// Swagger UI — available at /docs
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// Raw OpenAPI JSON spec
+app.get("/docs.json", (_req: Request, res: Response) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(swaggerSpec);
+});
 
 const config = loadConfig();
 const slackNotifier = new SlackNotifier(loadSlackNotifierOptionsFromEnv());
@@ -241,6 +257,9 @@ app.delete("/admin/signers/:publicKey", removeSignerHandler(config));
 app.get("/admin/device-tokens", listDeviceTokensHandler);
 app.post("/admin/device-tokens", registerDeviceTokenHandler);
 app.delete("/admin/device-tokens/:id", deleteDeviceTokenHandler);
+app.get("/admin/webhooks/dlq", listDlqHandler);
+app.post("/admin/webhooks/dlq/replay", replayDlqHandler);
+app.post("/admin/webhooks/dlq/delete", deleteDlqHandler);
 
 // Notification centre routes (SSE must be registered before /:id/read)
 app.get("/admin/notifications/sse", (req: Request, res: Response) =>
@@ -344,6 +363,16 @@ if (pagerDutyNotifier.isConfigured() || fcmNotifier.isConfigured()) {
   }
 } else {
   logger.info("PagerDuty incident alerting disabled - routing key not set");
+}
+
+try {
+  const treasuryRefill = initializeTreasuryRefill(config);
+  if (treasuryRefill) {
+    treasuryRefill.start();
+    logger.info("Treasury refill worker started");
+  }
+} catch (error) {
+  logger.error({ ...serializeError(error) }, "Failed to start treasury refill worker");
 }
 
 server = app.listen(PORT, () => {

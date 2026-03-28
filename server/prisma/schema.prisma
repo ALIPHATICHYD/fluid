@@ -32,6 +32,7 @@ model Tenant {
   webhookEventTypes  String?
   apiKeys                ApiKey[]
   webhookDeliveries      WebhookDelivery[]
+  webhookDlqEntries      WebhookDlq[]
   quotaTopUps            QuotaTopUp[]
   payments               Payment[]
   sponsoredTransactions  SponsoredTransaction[]
@@ -77,6 +78,23 @@ model WebhookDelivery {
 
   @@index([status])
   @@index([tenantId])
+}
+
+model WebhookDlq {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  deliveryId     String
+  url            String
+  payload        String
+  lastError      String?
+  retryCount     Int
+  failedAt       DateTime @default(now())
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([expiresAt])
 }
 
 model QuotaTopUp {
