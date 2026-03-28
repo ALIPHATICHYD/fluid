@@ -4,7 +4,7 @@ description = "Stellar Secret Key"
 regex = '''S[A-Z0-9]{55}'''
 tags = ["stellar", "secret"]
 
-[[allowlists]]
+[allowlist]
 description = "Ignore docs, examples, tests, and benchmark fixtures that intentionally contain placeholders"
 paths = [
   '''\.env\.example$''',

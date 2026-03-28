@@ -21,7 +21,7 @@ const VerifySchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Rate limiter: 5 sign-up attempts per IP per hour
+// Rate limiters
 // ---------------------------------------------------------------------------
 
 export const registrationRateLimit = rateLimit({
@@ -29,6 +29,17 @@ export const registrationRateLimit = rateLimit({
   max: 5,
   message: {
     error: "Too many sign-up attempts from this IP. Please try again later.",
+    code: "RATE_LIMITED",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+export const verifyEmailRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  message: {
+    error: "Too many verification attempts from this IP. Please try again later.",
     code: "RATE_LIMITED",
   },
   standardHeaders: true,

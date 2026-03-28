@@ -29,6 +29,7 @@ import {
   registerHandler,
   registrationRateLimit,
   verifyEmailHandler,
+  verifyEmailRateLimit,
 } from "./handlers/registration";
 import { createCheckoutSessionHandler, stripeWebhookHandler } from "./handlers/stripe";
 import {
@@ -232,7 +233,7 @@ app.post(
 app.post("/auth/register", registrationRateLimit, (req: Request, res: Response, next: NextFunction) => {
   void registerHandler(req, res, next);
 });
-app.post("/auth/verify-email", (req: Request, res: Response, next: NextFunction) => {
+app.post("/auth/verify-email", verifyEmailRateLimit, (req: Request, res: Response, next: NextFunction) => {
   void verifyEmailHandler(req, res, next);
 });
 
