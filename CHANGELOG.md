@@ -1,3 +1,12 @@
+# [1.1.0](https://github.com/Stellar-Fluid/fluid/compare/v1.0.0...v1.1.0) (2026-03-28)
+
+
+### Features
+
+* add treasury refill worker with periodic balance checks ([b3fc09c](https://github.com/Stellar-Fluid/fluid/commit/b3fc09c62733c6a4f3ad65a5ca9e49ae2ed45418))
+* add TreasurySwapService for Soroban AMM integration ([44ad631](https://github.com/Stellar-Fluid/fluid/commit/44ad6313ba8c5ef7820c8d1d26c3524d26072d73))
+* wire treasury refill worker into server startup ([79e7f43](https://github.com/Stellar-Fluid/fluid/commit/79e7f43afd047a177cd976eafd22bfdd394de796))
+
 # 1.0.0 (2026-03-28)
 
 
