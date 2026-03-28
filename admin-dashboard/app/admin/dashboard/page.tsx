@@ -12,6 +12,8 @@ import { SubscriptionTierManager } from "@/components/dashboard/SubscriptionTier
 import { getTenantLeaderboard } from "@/lib/transaction-history";
 import { getSubscriptionTierPageData } from "@/lib/subscription-tiers-data";
 import { SpendChart } from "@/components/dashboard/SpendChart";
+import { QuickstartWizard } from "@/components/dashboard/QuickstartWizard";
+import { getApiKeysPageData } from "@/lib/api-keys-data";
 import { Coins, CheckCircle, Wallet, Zap } from "lucide-react";
 
 export default async function AdminDashboard() {
@@ -19,6 +21,9 @@ export default async function AdminDashboard() {
   const { signers, transactions, source } = await getDashboardPageData();
   const tenantUsage = await getTenantLeaderboard();
   const subscriptionTierData = await getSubscriptionTierPageData();
+  const { keys: apiKeys } = await getApiKeysPageData();
+  const firstActiveKey =
+    apiKeys.find((k) => k.active)?.key ?? "your-api-key-here";
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -66,6 +71,9 @@ export default async function AdminDashboard() {
       </div>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* Quickstart wizard — auto-opens for new tenants, resumes from saved step */}
+        <QuickstartWizard apiKey={firstActiveKey} />
+
         {/* Stat Cards */}
         <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard
