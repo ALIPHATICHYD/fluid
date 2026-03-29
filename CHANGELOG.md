@@ -1,3 +1,24 @@
+# [1.12.0](https://github.com/Stellar-Fluid/fluid/compare/v1.11.0...v1.12.0) (2026-03-29)
+
+
+### Features
+
+* embedded ai support chatbot for dashboard operators ([d2d10a4](https://github.com/Stellar-Fluid/fluid/commit/d2d10a4d50a4c34453aea7d3d6eebf19498e5f5a))
+
+# [1.11.0](https://github.com/Stellar-Fluid/fluid/compare/v1.10.0...v1.11.0) (2026-03-29)
+
+
+### Features
+
+* ai-powered suspicious account auto-blocklist ([b774af4](https://github.com/Stellar-Fluid/fluid/commit/b774af4dd62f1a595dc3fa5979730c1e3d81acc4))
+
+# [1.10.0](https://github.com/Stellar-Fluid/fluid/compare/v1.9.0...v1.10.0) (2026-03-29)
+
+
+### Features
+
+* unified per-chain fee oracle with usd conversion ([fd7cdd7](https://github.com/Stellar-Fluid/fluid/commit/fd7cdd798a0a1efef586fcf62d86ac688d71923f))
+
 # [1.9.0](https://github.com/Stellar-Fluid/fluid/compare/v1.8.0...v1.9.0) (2026-03-29)
 
 
