@@ -96,6 +96,7 @@ import {
 } from "./services/chainRegistryService";
 import { initializeFeeManager } from "./services/feeManager";
 import { initializeOFACScreening, stopOFACScreening } from "./services/ofacScreening";
+import { initializeRegionalDbs, DEFAULT_REGION } from "./services/regionRouter";
 import { listTransactionsHandler } from "./handlers/adminTransactions";
 import {
   listSARReportsHandler,
@@ -135,6 +136,7 @@ async function initializeAuditLog() {
 }
 
 initializeAuditLog();
+initializeRegionalDbs();
 
 initializeOFACScreening();
 const feeManager = initializeFeeManager(config);
@@ -166,6 +168,12 @@ if (process.env.TRUST_PROXY === "true") {
 app.use(ipFilterMiddleware);
 app.use(express.json());
 app.use(soc2RequestLogger);
+
+// Stamp every response with the instance's home region for observability
+app.use((_req, res, next) => {
+  res.setHeader("X-Fluid-Region", DEFAULT_REGION);
+  next();
+});
 
 // Use Redis-backed store for global IP rate limiting. Falls back to memory store if Redis unavailable.
 const windowSeconds = Math.max(1, Math.ceil(config.rateLimitWindowMs / 1000));

@@ -25,6 +25,7 @@ model SubscriptionTier {
 model Tenant {
   id                 String            @id @default(uuid())
   name               String
+  region             String            @default("US") // Data residency region: "US" | "EU"
   subscriptionTierId String
   subscriptionTier   SubscriptionTier  @relation(fields: [subscriptionTierId], references: [id])
   dailyQuotaStroops  BigInt            @default(1000000) // 0.1 XLM default
