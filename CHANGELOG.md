@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/Stellar-Fluid/fluid/compare/v1.6.0...v1.7.0) (2026-03-29)
+
+
+### Features
+
+* public status page with uptime and incident history ([84e8d37](https://github.com/Stellar-Fluid/fluid/commit/84e8d378698fb303c5b393035add03bf7497288e)), closes [#171](https://github.com/Stellar-Fluid/fluid/issues/171)
+
 # [1.6.0](https://github.com/Stellar-Fluid/fluid/compare/v1.5.0...v1.6.0) (2026-03-29)
 
 
