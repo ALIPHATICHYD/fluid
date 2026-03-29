@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/Stellar-Fluid/fluid/compare/v1.8.0...v1.9.0) (2026-03-29)
+
+
+### Features
+
+* implement chain-agnostic fee sponsorship for Stellar, EVM, and Solana ([32dad8c](https://github.com/Stellar-Fluid/fluid/commit/32dad8cc04cae8ffff2ee2fe3a4777c530af02c6))
+
 # [1.8.0](https://github.com/Stellar-Fluid/fluid/compare/v1.7.0...v1.8.0) (2026-03-29)
 
 
