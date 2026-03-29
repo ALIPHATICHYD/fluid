@@ -1,3 +1,10 @@
+# [1.19.0](https://github.com/Stellar-Fluid/fluid/compare/v1.18.0...v1.19.0) (2026-03-29)
+
+
+### Features
+
+* per-chain api key scoping ([a540424](https://github.com/Stellar-Fluid/fluid/commit/a540424e3cd7d3223f79dd37c914ea63e7e2512d)), closes [#198](https://github.com/Stellar-Fluid/fluid/issues/198)
+
 # [1.18.0](https://github.com/Stellar-Fluid/fluid/compare/v1.17.0...v1.18.0) (2026-03-29)
 
 
