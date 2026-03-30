@@ -1,5 +1,5 @@
 import StellarSdk from "@stellar/stellar-sdk";
-import { SignerPool } from "./signing";
+import { SignerPool, SignerSelectionStrategy } from "./signing";
 
 export type HorizonSelectionStrategy = "priority" | "round_robin";
 
@@ -14,14 +14,14 @@ export interface FeePayerAccount {
 
 export interface VaultConfig {
   addr: string;
-  token?: string;
   appRole?: {
     roleId: string;
     secretId: string;
   };
   kvMount: string;
-  kvVersion: 1 | 2;
+  kvVersion: number;
   secretField: string;
+  token?: string;
 }
 
 export interface GrpcEngineConfig {
@@ -75,28 +75,28 @@ export interface DigestConfig {
 }
 
 export interface Config {
-  feePayerAccounts: FeePayerAccount[];
-  signerPool: SignerPool;
-  baseFee: number;
-  feeMultiplier: number;
-  networkPassphrase: string;
-  horizonUrl?: string;
-  horizonUrls: string[];
-  horizonSelectionStrategy: HorizonSelectionStrategy;
-  rateLimitWindowMs: number;
-  rateLimitMax: number;
   allowedOrigins: string[];
   alerting: AlertingConfig;
+  baseFee: number;
+  crossChainSettlementTimeoutMinutes: number;
   digest?: DigestConfig;
-  supportedAssets?: SupportedAsset[];
-  maxXdrSize: number;
-  maxOperations: number;
-  stellarRpcUrl?: string;
-  vault?: VaultConfig;
+  feeMultiplier: number;
+  feePayerAccounts: FeePayerAccount[];
+  grpcEngine?: GrpcEngineConfig;
+  horizonSelectionStrategy: HorizonSelectionStrategy;
+  horizonUrl?: string;
+  horizonUrls: string[];
   ipAllowlist: string[];
   ipDenylist: string[];
-  grpcEngine?: GrpcEngineConfig;
-  crossChainSettlementTimeoutMinutes: number;
+  maxOperations: number;
+  maxXdrSize: number;
+  networkPassphrase: string;
+  rateLimitMax: number;
+  rateLimitWindowMs: number;
+  signerPool: SignerPool;
+  stellarRpcUrl?: string;
+  supportedAssets?: SupportedAsset[];
+  vault?: VaultConfig;
 }
 
 // ---------------------------------------------------------------------------
@@ -302,6 +302,10 @@ export function loadConfig(): Config {
     process.env.FLUID_HORIZON_SELECTION === "round_robin"
       ? "round_robin"
       : "priority";
+  const signerSelectionStrategy: SignerSelectionStrategy =
+    process.env.FLUID_SIGNER_SELECTION === "round_robin"
+      ? "round_robin"
+      : "least_used";
 
   const rateLimitWindowMs = parsePositiveInt(
     process.env.FLUID_RATE_LIMIT_WINDOW_MS,
@@ -389,6 +393,7 @@ export function loadConfig(): Config {
               ? `vault:${account.secretSource.secretPath}`
               : "",
         })),
+        { selectionStrategy: signerSelectionStrategy },
       ),
     };
   }
@@ -418,15 +423,9 @@ export function loadConfig(): Config {
   return {
     ...sharedConfig,
     feePayerAccounts,
-    signerPool: new SignerPool(
-      feePayerAccounts.map((account) => ({
-        keypair: account.keypair,
-        secret:
-          account.secretSource.type === "env"
-            ? account.secretSource.secret
-            : "",
-      })),
-    ),
+    signerPool: SignerPool.fromSecrets(secrets, {
+      selectionStrategy: signerSelectionStrategy,
+    }),
   };
 }
 

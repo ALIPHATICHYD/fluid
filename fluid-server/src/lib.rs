@@ -29,14 +29,14 @@ use stellar_xdr::curr::{
 };
 use wasm_bindgen::prelude::*;
 
-
 // These modules are primarily used by the native server binary.
 // We expose them from the library so unit tests + coverage tools can exercise them.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod config;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod error;
-
+#[cfg(not(target_arch = "wasm32"))]
+pub mod grpc;
 
 const MAX_SIGNATURES: usize = 20;
 
@@ -91,7 +91,7 @@ impl WasmSigningResult {
 }
 
 #[derive(Debug)]
-enum SigningError {
+pub enum SigningError {
     InvalidSecretKey(String),
     InvalidEnvelope(String),
     UnsupportedEnvelope(String),
@@ -148,7 +148,7 @@ pub fn sign_transaction_xdr_internal(
     unsigned_xdr: &str,
     secret_key: &str,
     network_passphrase: &str,
-) -> Result<SigningResult, Box<dyn std::error::Error>> {
+) -> Result<SigningResult, SigningError> {
     let signer = signer_context(secret_key)?;
 
 

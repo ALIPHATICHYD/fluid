@@ -1,6 +1,7 @@
 import StellarSdk from "@stellar/stellar-sdk";
 import { Config, VaultConfig } from "../config";
 import { GrpcEngineSignerClient } from "./grpcEngineClient";
+import { grpcSigner } from "./grpcSigner";
 import { nativeSigner } from "./native";
 export { SignerPool } from "./signerPool";
 export type {
@@ -14,6 +15,8 @@ export type {
 interface SignableTransaction {
   addDecoratedSignature(signature: unknown): void;
   hash(): Buffer;
+  signatures: unknown[];
+  toXDR(): string;
 }
 
 interface SignerMetadata {
@@ -57,19 +60,34 @@ function getSignerMetadataFromPublicKey(publicKey: string): SignerMetadata {
 export async function signTransaction(
   tx: SignableTransaction,
   secret: string,
-  config?: Config,
+  configOrNetworkPassphrase?: Config | string,
 ): Promise<void> {
+  if (typeof configOrNetworkPassphrase === "string") {
+    const response = await grpcSigner.signXdr(
+      tx.toXDR(),
+      secret,
+      configOrNetworkPassphrase,
+    );
+    const signedTransaction = StellarSdk.TransactionBuilder.fromXDR(
+      response.signed_xdr,
+      configOrNetworkPassphrase,
+    ) as { signatures: unknown[] };
+
+    tx.signatures = signedTransaction.signatures;
+    return;
+  }
+
   const { hint } = getSignerMetadata(secret);
   const signature =
-    config?.grpcEngine
-      ? await getGrpcEngineSignerClient(config).signPayload(secret, tx.hash())
+    configOrNetworkPassphrase?.grpcEngine
+      ? await getGrpcEngineSignerClient(configOrNetworkPassphrase).signPayload(secret, tx.hash())
       : await nativeSigner.signPayload(secret, tx.hash());
 
   tx.addDecoratedSignature(
     new StellarSdk.xdr.DecoratedSignature({
       hint,
       signature,
-    })
+    }),
   );
 }
 
