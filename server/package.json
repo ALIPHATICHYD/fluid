@@ -21,6 +21,7 @@
     "dev": "ts-node src/index.ts",
     "watch": "tsc --watch",
     "test": "vitest",
+    "audit:prisma-indexes": "ts-node src/services/prismaIndexAudit.ts",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:status": "prisma migrate status",
