@@ -1,114 +1,67 @@
-import dotenv from "dotenv";
+import fs from "fs";
 import path from "path";
-import { AlertingConfig, Config } from "./config";
-import { AlertService } from "./services/alertService";
+import dotenv from "dotenv";
+import { sendLowBalanceAlert, resetCooldown } from "./services/alertService";
+import StellarSdk from "@stellar/stellar-sdk";
 
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
+// Load .env explicitly
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
+
+
+console.log("ENV TEST:", process.env.SMTP_HOST);
 
 async function main(): Promise<void> {
-  const config = buildTestConfig();
-  const alertService = new AlertService(config.alerting);
+  console.log("SMTP Host:", process.env.SMTP_HOST);
+  console.log("SMTP User:", process.env.SMTP_USER);
 
-  console.log("---------------------------------------------------");
-  console.log("  Fluid - Fee-Payer Low Balance Alert Test         ");
-  console.log("---------------------------------------------------");
-  console.log(
-    `  Slack configured : ${config.alerting.slackWebhookUrl ? "yes" : "no"}`,
-  );
-  console.log(`  Email configured : ${config.alerting.email ? "yes" : "no"}`);
-  console.log(
-    `  Threshold        : ${config.alerting.lowBalanceThresholdXlm ?? "not set"} XLM`,
-  );
-  console.log(`  Horizon URL      : ${config.horizonUrl ?? "not set"}`);
-  console.log("---------------------------------------------------");
+  const secret = process.env.FLUID_FEE_PAYER_SECRET?.split(",")[0].trim();
 
-  if (!alertService.isEnabled()) {
-    throw new Error(
-      "No alert transport configured. Set Slack webhook or SMTP env vars in server/.env.",
-    );
+  const accountId = secret
+    ? StellarSdk.Keypair.fromSecret(secret).publicKey()
+    : "GDTESTACCOUNTPLACEHOLDER00000000000000000000000000000000001";
+
+  const threshold = parseFloat(process.env.FLUID_LOW_BALANCE_THRESHOLD_XLM ?? "10");
+  const simulatedBalance = 1.5;
+
+  resetCooldown(accountId);
+  process.env.FLUID_LOW_BALANCE_ALERT_COOLDOWN_MS = "0";
+
+  console.log("═══════════════════════════════════════════════════");
+  console.log("  Fluid — Fee-Payer Low Balance Alert (TEST FIRE)  ");
+  console.log("═══════════════════════════════════════════════════");
+  console.log(`  Account  : ${accountId}`);
+  console.log(`  Balance  : ${simulatedBalance} XLM`);
+  console.log(`  Threshold: ${threshold} XLM`);
+  console.log(`  Slack    : ${process.env.SLACK_WEBHOOK_URL ? "✓ configured" : "✗ not set"}`);
+  console.log(`  Email    : ${process.env.SMTP_HOST ? "✓ configured" : "✗ not set"}`);
+  console.log("═══════════════════════════════════════════════════\n");
+
+  if (!process.env.SMTP_HOST && !process.env.SLACK_WEBHOOK_URL) {
+    console.error("ERROR: No alert transport configured.");
+    process.exit(1);
   }
 
-  await alertService.sendTestAlert(config);
-  console.log("Test alert sent successfully. Check Slack or your inbox now.");
-}
+  try {
+    const result = await sendLowBalanceAlert({
+      accountId,
+      currentBalance: simulatedBalance,
+      threshold,
+      network: "testnet",
+    });
 
-function buildTestConfig(): Config {
-  const lowBalanceThresholdXlm = parseOptionalNumber(
-    process.env.FLUID_LOW_BALANCE_THRESHOLD_XLM,
-  );
+    console.log("─── Result ─────────────────────────────────────────");
+    console.log(`  Slack sent : ${result.slackSent}`);
+    console.log(`  Email sent : ${result.emailSent}`);
+    console.log(`  Errors     : ${result.errors.length ? result.errors.join(", ") : "none"}`);
+    console.log("────────────────────────────────────────────────────\n");
 
-  const emailHost = process.env.FLUID_ALERT_SMTP_HOST?.trim();
-  const emailFrom = process.env.FLUID_ALERT_EMAIL_FROM?.trim();
-  const emailTo = process.env.FLUID_ALERT_EMAIL_TO
-    ?.split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
+    if (result.errors.length > 0) process.exit(1);
 
-  const alerting: AlertingConfig = {
-    lowBalanceThresholdXlm,
-    checkIntervalMs: parsePositiveInt(
-      process.env.FLUID_LOW_BALANCE_CHECK_INTERVAL_MS,
-      60 * 60 * 1000,
-    ),
-    cooldownMs: parsePositiveInt(
-      process.env.FLUID_LOW_BALANCE_ALERT_COOLDOWN_MS,
-      6 * 60 * 60 * 1000,
-    ),
-    slackWebhookUrl: process.env.FLUID_ALERT_SLACK_WEBHOOK_URL?.trim() || undefined,
-    email:
-      emailHost && emailFrom && emailTo && emailTo.length > 0
-        ? {
-            host: emailHost,
-            port: parsePositiveInt(process.env.FLUID_ALERT_SMTP_PORT, 587),
-            secure: process.env.FLUID_ALERT_SMTP_SECURE === "true",
-            user: process.env.FLUID_ALERT_SMTP_USER?.trim() || undefined,
-            pass: process.env.FLUID_ALERT_SMTP_PASS?.trim() || undefined,
-            from: emailFrom,
-            to: emailTo,
-          }
-        : undefined,
-  };
-
-  return {
-    feePayerAccounts: [],
-    baseFee: 100,
-    feeMultiplier: 2,
-    networkPassphrase:
-      process.env.STELLAR_NETWORK_PASSPHRASE ||
-      "Test SDF Network ; September 2015",
-    horizonUrl: process.env.STELLAR_HORIZON_URL,
-    rateLimitWindowMs: parsePositiveInt(
-      process.env.FLUID_RATE_LIMIT_WINDOW_MS,
-      60_000,
-    ),
-    rateLimitMax: parsePositiveInt(process.env.FLUID_RATE_LIMIT_MAX, 5),
-    allowedOrigins: [],
-    alerting,
-  };
-}
-
-function parsePositiveInt(
-  value: string | undefined,
-  fallback: number,
-): number {
-  if (!value) {
-    return fallback;
+    console.log("✓ Done! Check your email for the alert.");
+  } catch (err) {
+    console.error("Unhandled error:", err);
+    process.exit(1);
   }
-
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function parseOptionalNumber(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
-main().catch((error) => {
-  console.error("Failed to send test alert:", error);
-  process.exit(1);
-});
+main();
