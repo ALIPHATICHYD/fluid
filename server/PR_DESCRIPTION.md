@@ -23,3 +23,6 @@ feat: horizon-failover-logic-polish
 ## Issues
 
 Closes #461
+Refs #469
+Refs #451
+Refs #466
