@@ -41,8 +41,8 @@ STELLAR_HORIZON_URLS=
 FLUID_HORIZON_SELECTION=priority
 FLUID_RATE_LIMIT_WINDOW_MS=60000
 FLUID_RATE_LIMIT_MAX=5
-<<<<<<< HEAD
 FLUID_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+PORT=3000
 FLUID_LOW_BALANCE_THRESHOLD_XLM=50
 FLUID_LOW_BALANCE_CHECK_INTERVAL_MS=3600000
 FLUID_LOW_BALANCE_ALERT_COOLDOWN_MS=21600000
@@ -54,10 +54,6 @@ FLUID_ALERT_SMTP_USER=
 FLUID_ALERT_SMTP_PASS=
 FLUID_ALERT_EMAIL_FROM=
 FLUID_ALERT_EMAIL_TO=
-=======
-FLUID_ALLOWED_ORIGINS=
-PORT=3000
->>>>>>> upstream/main
 ```
 
 ## API
@@ -151,6 +147,25 @@ Key architectural choices (why Rust, why gRPC, why Prisma) are documented as Arc
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup, pull request guidelines, and code style requirements.
+
+## Sponsors
+
+Fluid is free, open-source software. Sponsorships help cover infrastructure costs and sustain active development.
+
+[![Sponsor Fluid](https://img.shields.io/badge/Sponsor-Fluid-brightgreen?logo=github-sponsors)](https://github.com/sponsors/Stellar-Fluid)
+
+### Sponsor tiers
+
+| Tier | Monthly | Benefits |
+|---|---|---|
+| **Supporter** | $5 | Name in the monthly transparency report |
+| **Bronze** | $25 | Name + link in `README.md` |
+| **Silver** | $100 | Logo in `README.md` + priority issue triage |
+| **Gold** | $500 | Logo, dedicated support channel, and co-marketing |
+
+To sponsor via Stellar directly, send XLM or USDC to the project's public key listed at [stellar-fluid.dev/sponsor](https://stellar-fluid.dev/sponsor).
+
+> Sponsor fund usage is published in the [monthly transparency report](docs/reports/).
 
 ## Migration
 
