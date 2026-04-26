@@ -61,6 +61,7 @@
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "@wormhole-foundation/sdk": "^4.14.1",
+    "bloom-filters": "^3.0.1",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.71.1",
     "cors": "^2.8.6",
